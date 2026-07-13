@@ -354,7 +354,7 @@ app.mount("/api", api)
 # Static frontend
 # ---------------------------------------------------------------------------
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/assets", StaticFiles(directory=STATIC_DIR), name="assets")
+app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
 
 @app.get("/{full_path:path}")
