@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TaskTrack Free</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<style>
+  :root{
+    --bg:#10151F; --surface:#171E2B; --surface-2:#1E2635; --border:#293145;
+    --text:#E7E9EE; --muted:#8B93A7;
+    --accent:#E8A33D; --accent-ink:#3A2A0E;
+    --success:#4FAE7A; --danger:#D9534F; --info:#5B8DEF;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;}
+  h1,h2,h3,.display{font-family:'Space Grotesk',sans-serif;}
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  ::selection{background:var(--accent);color:var(--accent-ink);}
+  input,textarea,select{font-family:inherit;background:var(--surface-2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:10px 12px;width:100%;outline:none;}
+  input:focus,textarea:focus,select:focus{border-color:var(--accent);}
+  button{font-family:inherit;cursor:pointer;border:none;}
+  .btn{background:var(--accent);color:var(--accent-ink);font-weight:600;border-radius:8px;padding:10px 16px;}
+  .btn:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:8px;padding:10px 16px;}
+  .btn-ghost:hover{color:var(--text);border-color:var(--accent);}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;}
+  a{color:var(--accent);}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {
+  useState,
+  useEffect,
+  useCallback
+} = React;
+const STATUS_META = {
+  pending: {
+    label: "Pending",
+    color: "var(--muted)"
+  },
+  in_progress: {
+    label: "In progress",
+    color: "var(--info)"
+  },
+  done: {
+    label: "Done",
+    color: "var(--success)"
+  }
+};
+async function api(path, opts = {}) {
+  const res = await fetch("/api" + path, {
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    ...opts
+  });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data && data.detail || "Something went wrong");
+  return data;
+}
+function Logo() {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 30,
+      height: 30,
+      borderRadius: 8,
+      background: "var(--accent)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "var(--accent-ink)",
+      fontWeight: 700,
+      fontFamily: "'Space Grotesk'"
+    }
+  }, "T"), /*#__PURE__*/React.createElement("span", {
+    className: "display",
+    style: {
+      fontWeight: 700,
+      fontSize: 18
+    }
+  }, "TaskTrack"), /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      color: "var(--muted)",
+      fontSize: 11,
+      border: "1px solid var(--border)",
+      borderRadius: 999,
+      padding: "2px 8px"
+    }
+  }, "free"));
+}
+function AuthScreen({
+  onAuthed
+}) {
+  const [mode, setMode] = useState("login");
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: ""
+  });
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const submit = async e => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const body = mode === "login" ? {
+        email: form.email,
+        password: form.password
+      } : form;
+      const data = await api(`/auth/${mode === "login" ? "login" : "register"}`, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      onAuthed(data.user);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      minHeight: "100vh",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      padding: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      width: 380,
+      padding: 32
+    }
+  }, /*#__PURE__*/React.createElement(Logo, null), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontSize: 22,
+      margin: "20px 0 4px"
+    }
+  }, mode === "login" ? "Sign in" : "Create your account"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "var(--muted)",
+      fontSize: 14,
+      margin: "0 0 20px"
+    }
+  }, mode === "login" ? "Welcome back — pick up where the team left off." : "Join the team ledger in seconds."), /*#__PURE__*/React.createElement("form", {
+    onSubmit: submit,
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 12
+    }
+  }, mode === "register" && /*#__PURE__*/React.createElement("input", {
+    placeholder: "Full name",
+    required: true,
+    value: form.name,
+    onChange: e => setForm({
+      ...form,
+      name: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "email",
+    placeholder: "Email",
+    required: true,
+    value: form.email,
+    onChange: e => setForm({
+      ...form,
+      email: e.target.value
+    })
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    placeholder: "Password",
+    required: true,
+    minLength: 6,
+    value: form.password,
+    onChange: e => setForm({
+      ...form,
+      password: e.target.value
+    })
+  }), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--danger)",
+      fontSize: 13
+    }
+  }, error), /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    disabled: loading,
+    style: {
+      marginTop: 4
+    }
+  }, loading ? "Please wait…" : mode === "login" ? "Sign in" : "Create account")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 18,
+      fontSize: 13,
+      color: "var(--muted)",
+      textAlign: "center"
+    }
+  }, mode === "login" ? "New here?" : "Already have an account?", " ", /*#__PURE__*/React.createElement("a", {
+    href: "#",
+    onClick: e => {
+      e.preventDefault();
+      setMode(mode === "login" ? "register" : "login");
+      setError("");
+    }
+  }, mode === "login" ? "Create one" : "Sign in")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: 16,
+      fontSize: 12,
+      color: "var(--muted)",
+      borderTop: "1px solid var(--border)",
+      paddingTop: 12
+    }
+  }, "Admin demo login: ", /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, "admin@tasktrack.com"), " / ", /*#__PURE__*/React.createElement("span", {
+    className: "mono"
+  }, "admin123"))));
+}
+function TaskCard({
+  task,
+  onUpdate,
+  onDelete
+}) {
+  const meta = STATUS_META[task.status];
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      padding: 14,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 600
+    }
+  }, task.title), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onDelete(task.id),
+    title: "Delete",
+    style: {
+      background: "none",
+      color: "var(--muted)",
+      fontSize: 16,
+      padding: "0 4px"
+    }
+  }, "×")), task.description && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--muted)",
+      fontSize: 13,
+      marginTop: 4
+    }
+  }, task.description), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginTop: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: task.status,
+    onChange: e => onUpdate(task.id, {
+      status: e.target.value
+    }),
+    style: {
+      padding: "4px 8px",
+      fontSize: 12,
+      width: "auto"
+    }
+  }, Object.entries(STATUS_META).map(([k, v]) => /*#__PURE__*/React.createElement("option", {
+    key: k,
+    value: k
+  }, v.label))), task.due_date && /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      fontSize: 11,
+      color: task.overdue ? "var(--danger)" : "var(--muted)"
+    }
+  }, "due ", task.due_date, " ", task.overdue ? "· overdue" : "")));
+}
+function NewTaskForm({
+  onCreate
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const submit = async e => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    await onCreate({
+      title,
+      description,
+      due_date: dueDate || null
+    });
+    setTitle("");
+    setDescription("");
+    setDueDate("");
+    setOpen(false);
+  };
+  if (!open) {
+    return /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost",
+      style: {
+        width: "100%",
+        marginBottom: 16
+      },
+      onClick: () => setOpen(true)
+    }, "+ New task");
+  }
+  return /*#__PURE__*/React.createElement("form", {
+    onSubmit: submit,
+    className: "card",
+    style: {
+      padding: 14,
+      marginBottom: 16,
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    autoFocus: true,
+    placeholder: "Task title",
+    value: title,
+    onChange: e => setTitle(e.target.value)
+  }), /*#__PURE__*/React.createElement("textarea", {
+    placeholder: "Description (optional)",
+    rows: 2,
+    value: description,
+    onChange: e => setDescription(e.target.value)
+  }), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: dueDate,
+    onChange: e => setDueDate(e.target.value)
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn",
+    type: "submit"
+  }, "Add task"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    type: "button",
+    onClick: () => setOpen(false)
+  }, "Cancel")));
+}
+function Dashboard({
+  user
+}) {
+  const [tasks, setTasks] = useState([]);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setTasks(await api("/tasks"));
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const createTask = async body => {
+    await api("/tasks", {
+      method: "POST",
+      body: JSON.stringify(body)
+    });
+    load();
+  };
+  const updateTask = async (id, body) => {
+    await api(`/tasks/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(body)
+    });
+    load();
+  };
+  const deleteTask = async id => {
+    await api(`/tasks/${id}`, {
+      method: "DELETE"
+    });
+    load();
+  };
+  const columns = ["pending", "in_progress", "done"];
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      marginBottom: 4
+    }
+  }, "Your tasks"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "var(--muted)",
+      fontSize: 14,
+      marginTop: 0
+    }
+  }, user.name, "'s personal board"), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--danger)",
+      marginBottom: 12
+    }
+  }, error), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+      gap: 20
+    }
+  }, columns.map(col => /*#__PURE__*/React.createElement("div", {
+    key: col
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 8,
+      height: 8,
+      borderRadius: 999,
+      background: STATUS_META[col].color,
+      display: "inline-block"
+    }
+  }), /*#__PURE__*/React.createElement("h3", {
+    style: {
+      margin: 0,
+      fontSize: 14,
+      color: "var(--muted)",
+      textTransform: "uppercase",
+      letterSpacing: 0.5
+    }
+  }, STATUS_META[col].label, " · ", tasks.filter(t => t.status === col).length)), col === "pending" && /*#__PURE__*/React.createElement(NewTaskForm, {
+    onCreate: createTask
+  }), tasks.filter(t => t.status === col).map(t => /*#__PURE__*/React.createElement(TaskCard, {
+    key: t.id,
+    task: t,
+    onUpdate: updateTask,
+    onDelete: deleteTask
+  }))))));
+}
+function AdminPanel() {
+  const [users, setUsers] = useState([]);
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setUsers(await api("/admin/users"));
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const removeUser = async id => {
+    if (!confirm("Remove this teammate and all their tasks?")) return;
+    await api(`/admin/users/${id}`, {
+      method: "DELETE"
+    });
+    load();
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("h2", {
+    style: {
+      marginBottom: 4
+    }
+  }, "Team overview"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      color: "var(--muted)",
+      fontSize: 14,
+      marginTop: 0
+    }
+  }, "Every teammate's completion stats, in one batched query."), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: "var(--danger)",
+      marginBottom: 12
+    }
+  }, error), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      overflowX: "auto"
+    }
+  }, /*#__PURE__*/React.createElement("table", {
+    style: {
+      width: "100%",
+      borderCollapse: "collapse",
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", {
+    style: {
+      textAlign: "left",
+      color: "var(--muted)",
+      borderBottom: "1px solid var(--border)"
+    }
+  }, ["Name", "Email", "Total", "Done", "Pending", "In progress", "Overdue", "Completion", ""].map(h => /*#__PURE__*/React.createElement("th", {
+    key: h,
+    style: {
+      padding: "10px 14px",
+      fontWeight: 500
+    }
+  }, h)))), /*#__PURE__*/React.createElement("tbody", null, users.map(u => /*#__PURE__*/React.createElement("tr", {
+    key: u.id,
+    style: {
+      borderBottom: "1px solid var(--border)"
+    }
+  }, /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "10px 14px",
+      fontWeight: 600
+    }
+  }, u.name, " ", u.role === "admin" && /*#__PURE__*/React.createElement("span", {
+    className: "mono",
+    style: {
+      color: "var(--accent)",
+      fontSize: 11
+    }
+  }, " · admin")), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "10px 14px",
+      color: "var(--muted)"
+    }
+  }, u.email), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px"
+    }
+  }, u.total), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px",
+      color: "var(--success)"
+    }
+  }, u.done), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px"
+    }
+  }, u.pending), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px",
+      color: "var(--info)"
+    }
+  }, u.in_progress), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px",
+      color: u.overdue ? "var(--danger)" : "var(--muted)"
+    }
+  }, u.overdue), /*#__PURE__*/React.createElement("td", {
+    className: "mono",
+    style: {
+      padding: "10px 14px"
+    }
+  }, u.completion_rate, "%"), /*#__PURE__*/React.createElement("td", {
+    style: {
+      padding: "10px 14px"
+    }
+  }, u.role !== "admin" && /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    style: {
+      padding: "4px 10px",
+      fontSize: 12
+    },
+    onClick: () => removeUser(u.id)
+  }, "Remove"))))))));
+}
+function App() {
+  const [user, setUser] = useState(undefined); // undefined = loading, null = logged out
+  const [view, setView] = useState("tasks");
+  useEffect(() => {
+    api("/auth/me").then(setUser).catch(() => setUser(null));
+  }, []);
+  const logout = async () => {
+    await api("/auth/logout", {
+      method: "POST"
+    });
+    setUser(null);
+  };
+  if (user === undefined) return null;
+  if (!user) return /*#__PURE__*/React.createElement(AuthScreen, {
+    onAuthed: setUser
+  });
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      borderBottom: "1px solid var(--border)",
+      padding: "14px 24px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Logo, null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 16
+    }
+  }, user.role === "admin" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 4,
+      background: "var(--surface-2)",
+      borderRadius: 8,
+      padding: 4
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("tasks"),
+    className: view === "tasks" ? "btn" : "btn-ghost",
+    style: {
+      padding: "6px 12px",
+      fontSize: 13,
+      border: "none"
+    }
+  }, "My tasks"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("admin"),
+    className: view === "admin" ? "btn" : "btn-ghost",
+    style: {
+      padding: "6px 12px",
+      fontSize: 13,
+      border: "none"
+    }
+  }, "Team")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: "var(--muted)",
+      fontSize: 14
+    }
+  }, user.name), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: logout,
+    style: {
+      padding: "6px 12px",
+      fontSize: 13
+    }
+  }, "Sign out"))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      maxWidth: 1100,
+      margin: "0 auto",
+      padding: "28px 24px"
+    }
+  }, view === "admin" && user.role === "admin" ? /*#__PURE__*/React.createElement(AdminPanel, null) : /*#__PURE__*/React.createElement(Dashboard, {
+    user: user
+  })));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+
+</script>
+</body>
+</html>
