@@ -36,8 +36,8 @@ from sqlalchemy import create_engine, text
 # to deploy on a different host)
 # ---------------------------------------------------------------------------
 # DATABASE_URL examples:
-#   sqlite:///tasktrack.db                          (default — local file)
-#   postgresql+psycopg2://user:pass@host:5432/dbname (Supabase / Neon / etc.)
+#   sqlite:///tasktrack.db                       (default — local file)
+#   postgresql+psycopg://user:pass@host:5432/dbname (Supabase / Neon / etc.)
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///tasktrack.db")
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-this-secret-in-production")
 JWT_ALGO = "HS256"
