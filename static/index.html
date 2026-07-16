@@ -1380,7 +1380,7 @@ function MeetingsView() {
     e.preventDefault();
     if (!title.trim() || !date) return;
     try {
-      await api("/meetings", {
+      const result = await api("/meetings", {
         method: "POST",
         body: JSON.stringify({
           title,
@@ -1391,6 +1391,11 @@ function MeetingsView() {
       setTitle("");
       setDate("");
       setShowForm(false);
+      if (result.sync_error) {
+        setError("Meeting saved, but Google Calendar sync failed: " + result.sync_error);
+      } else {
+        setError("");
+      }
       load();
     } catch (err) {
       setError(err.message);

@@ -513,13 +513,18 @@ function MeetingsView() {
     e.preventDefault();
     if (!title.trim() || !date) return;
     try {
-      await api("/meetings", {
+      const result = await api("/meetings", {
         method: "POST",
         body: JSON.stringify({
           title, start_time: `${date}T${startTime}:00`, end_time: `${date}T${endTime}:00`,
         }),
       });
       setTitle(""); setDate(""); setShowForm(false);
+      if (result.sync_error) {
+        setError("Meeting saved, but Google Calendar sync failed: " + result.sync_error);
+      } else {
+        setError("");
+      }
       load();
     } catch (err) { setError(err.message); }
   };

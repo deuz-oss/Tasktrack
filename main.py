@@ -55,6 +55,7 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.events", "openid",
                  "https://www.googleapis.com/auth/userinfo.email"]
+MEETING_TIMEZONE = os.environ.get("MEETING_TIMEZONE", "Asia/Jakarta")
 
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 engine = create_engine(
@@ -594,17 +595,28 @@ def create_meeting(body: MeetingIn, user: dict = Depends(get_current_user)):
 
     service = get_calendar_service(user)
     if service:
-        event = service.events().insert(
-            calendarId="primary",
-            body={
-                "summary": body.title,
-                "description": body.description,
-                "start": {"dateTime": body.start_time},
-                "end": {"dateTime": body.end_time},
-            },
-        ).execute()
-        google_event_id = event.get("id")
-        google_event_link = event.get("htmlLink")
+        try:
+            event = service.events().insert(
+                calendarId="primary",
+                body={
+                    "summary": body.title,
+                    "description": body.description,
+                    "start": {"dateTime": body.start_time, "timeZone": MEETING_TIMEZONE},
+                    "end": {"dateTime": body.end_time, "timeZone": MEETING_TIMEZONE},
+                },
+            ).execute()
+            google_event_id = event.get("id")
+            google_event_link = event.get("htmlLink")
+        except Exception as e:
+            # Don't fail the whole request if Google sync has a problem — still
+            # save the meeting locally, but tell the caller sync didn't happen.
+            google_event_id = None
+            google_event_link = None
+            sync_error = str(e)
+        else:
+            sync_error = None
+    else:
+        sync_error = None
 
     with get_db() as db:
         db.execute(
@@ -617,7 +629,10 @@ def create_meeting(body: MeetingIn, user: dict = Depends(get_current_user)):
              "google_event_id": google_event_id, "google_event_link": google_event_link, "created_at": now},
         )
         row = row_to_dict(db.execute(text("SELECT * FROM meetings WHERE id = :id"), {"id": mid}).fetchone())
-    return meeting_public(row)
+    result = meeting_public(row)
+    if sync_error:
+        result["sync_error"] = sync_error
+    return result
 
 
 @api.delete("/meetings/{meeting_id}", status_code=204)
