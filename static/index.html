@@ -1336,6 +1336,328 @@ function TeamView({
     }, t.owner_name));
   })));
 }
+function MeetingsView() {
+  const [meetings, setMeetings] = useState([]);
+  const [status, setStatus] = useState({
+    connected: false,
+    google_email: null
+  });
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("09:30");
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      const [m, s] = await Promise.all([api("/meetings"), api("/auth/google/status")]);
+      setMeetings(m);
+      setStatus(s);
+    } catch (e) {
+      setError(e.message);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  const connect = async () => {
+    try {
+      const {
+        auth_url
+      } = await api("/auth/google/connect");
+      window.location.href = auth_url;
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+  const disconnect = async () => {
+    await api("/auth/google/disconnect", {
+      method: "POST"
+    });
+    load();
+  };
+  const createMeeting = async e => {
+    e.preventDefault();
+    if (!title.trim() || !date) return;
+    try {
+      await api("/meetings", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          start_time: `${date}T${startTime}:00`,
+          end_time: `${date}T${endTime}:00`
+        })
+      });
+      setTitle("");
+      setDate("");
+      setShowForm(false);
+      load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+  const del = async id => {
+    await api(`/meetings/${id}`, {
+      method: "DELETE"
+    });
+    load();
+  };
+  const inputStyle = {
+    width: "100%",
+    border: `2px solid ${INK}`,
+    padding: "9px 10px",
+    fontFamily: "inherit",
+    boxSizing: "border-box"
+  };
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      flexWrap: "wrap",
+      gap: 16,
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: mono,
+      fontSize: 12,
+      fontWeight: 700,
+      letterSpacing: 1,
+      color: "#8a6fd6"
+    }
+  }, "SCHEDULE"), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      fontFamily: display,
+      fontSize: 42,
+      margin: "4px 0 0"
+    }
+  }, "MEETINGS")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowForm(true),
+    style: {
+      padding: "12px 18px",
+      background: INK,
+      color: "#fff",
+      border: "none",
+      fontFamily: mono,
+      fontWeight: 700,
+      fontSize: 12,
+      letterSpacing: 0.5,
+      cursor: "pointer"
+    }
+  }, "+ NEW MEETING")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...cardStyle,
+      padding: 18,
+      marginBottom: 20,
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      flexWrap: "wrap",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, "Google Calendar"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: mono,
+      fontSize: 12,
+      color: "#8a8a8a",
+      marginTop: 2
+    }
+  }, status.connected ? `Connected as ${status.google_email}` : "Not connected — meetings won't sync automatically")), status.connected ? /*#__PURE__*/React.createElement("button", {
+    onClick: disconnect,
+    style: {
+      padding: "10px 16px",
+      border: `2px solid ${INK}`,
+      background: "#fff",
+      fontFamily: mono,
+      fontWeight: 700,
+      fontSize: 12,
+      cursor: "pointer"
+    }
+  }, "DISCONNECT") : /*#__PURE__*/React.createElement("button", {
+    onClick: connect,
+    style: {
+      padding: "10px 16px",
+      border: "none",
+      background: INK,
+      color: "#fff",
+      fontFamily: mono,
+      fontWeight: 700,
+      fontSize: 12,
+      cursor: "pointer"
+    }
+  }, "CONNECT GOOGLE CALENDAR")), error && /*#__PURE__*/React.createElement("div", {
+    style: {
+      color: RED,
+      fontWeight: 600,
+      marginBottom: 12
+    }
+  }, error), showForm && /*#__PURE__*/React.createElement("form", {
+    onSubmit: createMeeting,
+    style: {
+      ...cardStyle,
+      padding: 20,
+      marginBottom: 20
+    }
+  }, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontFamily: mono,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, "TITLE"), /*#__PURE__*/React.createElement("input", {
+    autoFocus: true,
+    required: true,
+    value: title,
+    onChange: e => setTitle(e.target.value),
+    placeholder: "Weekly sync",
+    style: {
+      ...inputStyle,
+      margin: "6px 0 14px"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "1fr 1fr 1fr",
+      gap: 14,
+      marginBottom: 14
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontFamily: mono,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, "DATE"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    required: true,
+    value: date,
+    onChange: e => setDate(e.target.value),
+    style: {
+      ...inputStyle,
+      marginTop: 6
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontFamily: mono,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, "START"), /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    required: true,
+    value: startTime,
+    onChange: e => setStartTime(e.target.value),
+    style: {
+      ...inputStyle,
+      marginTop: 6
+    }
+  })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontFamily: mono,
+      fontSize: 11,
+      fontWeight: 700
+    }
+  }, "END"), /*#__PURE__*/React.createElement("input", {
+    type: "time",
+    required: true,
+    value: endTime,
+    onChange: e => setEndTime(e.target.value),
+    style: {
+      ...inputStyle,
+      marginTop: 6
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 10
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => setShowForm(false),
+    style: {
+      flex: 1,
+      padding: "12px 0",
+      border: `2px solid ${INK}`,
+      background: "#fff",
+      fontFamily: mono,
+      fontWeight: 700,
+      cursor: "pointer"
+    }
+  }, "CANCEL"), /*#__PURE__*/React.createElement("button", {
+    type: "submit",
+    style: {
+      flex: 1,
+      padding: "12px 0",
+      border: `2px solid ${INK}`,
+      background: INK,
+      color: "#fff",
+      fontFamily: mono,
+      fontWeight: 700,
+      cursor: "pointer"
+    }
+  }, "CREATE MEETING"))), /*#__PURE__*/React.createElement("div", {
+    style: cardStyle
+  }, meetings.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 18,
+      color: "#8a8a8a",
+      fontFamily: mono,
+      fontSize: 13
+    }
+  }, "No meetings scheduled yet."), meetings.map(m => /*#__PURE__*/React.createElement("div", {
+    key: m.id,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      padding: "14px 18px",
+      borderBottom: `2px solid ${INK}`,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 200
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontWeight: 700,
+      fontSize: 15
+    }
+  }, m.title), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontFamily: mono,
+      fontSize: 12,
+      color: "#8a8a8a",
+      marginTop: 4
+    }
+  }, m.start_time.replace("T", " ").slice(0, 16), " – ", m.end_time.slice(11, 16))), m.synced ? /*#__PURE__*/React.createElement("a", {
+    href: m.google_event_link,
+    target: "_blank",
+    rel: "noreferrer"
+  }, /*#__PURE__*/React.createElement(Pill, {
+    bg: MINT
+  }, "synced to google")) : /*#__PURE__*/React.createElement(Pill, {
+    border: false,
+    bg: "#eee"
+  }, "not synced"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => del(m.id),
+    style: {
+      width: 32,
+      height: 32,
+      border: `2px solid ${INK}`,
+      background: "#fff",
+      cursor: "pointer",
+      fontWeight: 700
+    }
+  }, "×")))));
+}
 function App() {
   const [user, setUser] = useState(undefined);
   const [view, setView] = useState("dashboard");
@@ -1407,6 +1729,10 @@ function App() {
     label: "Categories",
     active: view === "categories",
     onClick: () => setView("categories")
+  }), /*#__PURE__*/React.createElement(NavButton, {
+    label: "Meetings",
+    active: view === "meetings",
+    onClick: () => setView("meetings")
   }), user.role === "admin" && /*#__PURE__*/React.createElement(NavButton, {
     label: "Team",
     active: view === "team",
@@ -1464,7 +1790,7 @@ function App() {
   }), view === "categories" && /*#__PURE__*/React.createElement(CategoriesView, {
     categories: categories,
     refresh: loadAll
-  }), view === "team" && user.role === "admin" && /*#__PURE__*/React.createElement(TeamView, {
+  }), view === "meetings" && /*#__PURE__*/React.createElement(MeetingsView, null), view === "team" && user.role === "admin" && /*#__PURE__*/React.createElement(TeamView, {
     categories: categories
   })));
 }

@@ -27,9 +27,13 @@ import jwt
 from fastapi import FastAPI, Depends, HTTPException, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import create_engine, text
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request as GoogleAuthRequest
+from googleapiclient.discovery import build as google_build
 
 # ---------------------------------------------------------------------------
 # Config (all overridable via environment variables — no code changes needed
@@ -46,12 +50,36 @@ ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@tasktrack.com")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*")
 
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+GOOGLE_SCOPES = ["https://www.googleapis.com/auth/calendar.events", "openid",
+                 "https://www.googleapis.com/auth/userinfo.email"]
+
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 engine = create_engine(
     DATABASE_URL,
     connect_args={"check_same_thread": False} if IS_SQLITE else {},
     pool_pre_ping=True,
 )
+
+
+def google_flow():
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google Calendar isn't configured on this server yet")
+    return Flow.from_client_config(
+        {
+            "web": {
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [GOOGLE_REDIRECT_URI],
+            }
+        },
+        scopes=GOOGLE_SCOPES,
+        redirect_uri=GOOGLE_REDIRECT_URI,
+    )
 
 
 def hash_password(password: str) -> str:
@@ -102,6 +130,21 @@ def init_db():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'user',
+                google_refresh_token TEXT,
+                google_email TEXT,
+                created_at TEXT NOT NULL
+            )
+        """))
+        db.execute(text("""
+            CREATE TABLE IF NOT EXISTS meetings (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                start_time TEXT NOT NULL,
+                end_time TEXT NOT NULL,
+                google_event_id TEXT,
+                google_event_link TEXT,
                 created_at TEXT NOT NULL
             )
         """))
@@ -128,6 +171,15 @@ def init_db():
                 updated_at TEXT NOT NULL
             )
         """))
+        db.commit()  # commit table creation before attempting migrations below
+        # Migration: add Google OAuth columns to an already-existing users table
+        # (CREATE TABLE IF NOT EXISTS above won't alter a table that already exists)
+        for col, coltype in [("google_refresh_token", "TEXT"), ("google_email", "TEXT")]:
+            try:
+                db.execute(text(f"ALTER TABLE users ADD COLUMN {col} {coltype}"))
+                db.commit()
+            except Exception:
+                db.rollback()  # column already exists — fine
         admin = db.execute(text("SELECT id FROM users WHERE email = :email"), {"email": ADMIN_EMAIL}).fetchone()
         if not admin:
             db.execute(
@@ -181,6 +233,13 @@ class TaskUpdateIn(BaseModel):
 class CategoryIn(BaseModel):
     name: str
     color: str = "#8FE3C4"
+
+
+class MeetingIn(BaseModel):
+    title: str
+    description: str = ""
+    start_time: str  # ISO datetime, e.g. 2026-07-20T14:00:00
+    end_time: str
 
 
 # ---------------------------------------------------------------------------
@@ -443,6 +502,140 @@ def create_category(body: CategoryIn, user: dict = Depends(get_current_user)):
 def delete_category(category_id: str, user: dict = Depends(get_current_user)):
     with get_db() as db:
         db.execute(text("DELETE FROM categories WHERE id = :id"), {"id": category_id})
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Google Calendar — connect an account, then meetings created in the app are
+# mirrored to the user's Google Calendar automatically.
+# ---------------------------------------------------------------------------
+@api.get("/auth/google/status")
+def google_status(user: dict = Depends(get_current_user)):
+    return {"connected": bool(user.get("google_refresh_token")), "google_email": user.get("google_email")}
+
+
+@api.get("/auth/google/connect")
+def google_connect(user: dict = Depends(get_current_user)):
+    flow = google_flow()
+    auth_url, _ = flow.authorization_url(
+        access_type="offline", prompt="consent", state=user["id"],
+    )
+    return {"auth_url": auth_url}
+
+
+@api.get("/auth/google/callback")
+def google_callback(code: str, state: str):
+    flow = google_flow()
+    flow.fetch_token(code=code)
+    creds = flow.credentials
+    # Fetch the connected Google account's email for display purposes
+    oauth2 = google_build("oauth2", "v2", credentials=creds)
+    google_email = oauth2.userinfo().get().execute().get("email", "")
+
+    with get_db() as db:
+        db.execute(
+            text("UPDATE users SET google_refresh_token = :rt, google_email = :ge WHERE id = :id"),
+            {"rt": creds.refresh_token, "ge": google_email, "id": state},
+        )
+    # Redirect back into the app (state carried the user id, not needed client-side)
+    return RedirectResponse(url="/?google_connected=1")
+
+
+@api.post("/auth/google/disconnect")
+def google_disconnect(user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        db.execute(
+            text("UPDATE users SET google_refresh_token = NULL, google_email = NULL WHERE id = :id"),
+            {"id": user["id"]},
+        )
+    return {"ok": True}
+
+
+def get_calendar_service(user: dict):
+    """Build an authenticated Google Calendar API client for this user, or None if not connected."""
+    if not user.get("google_refresh_token"):
+        return None
+    creds = Credentials(
+        token=None,
+        refresh_token=user["google_refresh_token"],
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        scopes=GOOGLE_SCOPES,
+    )
+    creds.refresh(GoogleAuthRequest())
+    return google_build("calendar", "v3", credentials=creds)
+
+
+def meeting_public(m: dict) -> dict:
+    return {
+        "id": m["id"], "title": m["title"], "description": m["description"],
+        "start_time": m["start_time"], "end_time": m["end_time"],
+        "google_event_link": m["google_event_link"],
+        "synced": bool(m["google_event_id"]),
+    }
+
+
+@api.get("/meetings")
+def list_meetings(user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        rows = rows_to_dicts(db.execute(
+            text("SELECT * FROM meetings WHERE user_id = :uid ORDER BY start_time ASC"), {"uid": user["id"]}
+        ).fetchall())
+    return [meeting_public(m) for m in rows]
+
+
+@api.post("/meetings", status_code=201)
+def create_meeting(body: MeetingIn, user: dict = Depends(get_current_user)):
+    mid = str(uuid.uuid4())
+    now = dt.datetime.utcnow().isoformat()
+    google_event_id = None
+    google_event_link = None
+
+    service = get_calendar_service(user)
+    if service:
+        event = service.events().insert(
+            calendarId="primary",
+            body={
+                "summary": body.title,
+                "description": body.description,
+                "start": {"dateTime": body.start_time},
+                "end": {"dateTime": body.end_time},
+            },
+        ).execute()
+        google_event_id = event.get("id")
+        google_event_link = event.get("htmlLink")
+
+    with get_db() as db:
+        db.execute(
+            text("INSERT INTO meetings (id, user_id, title, description, start_time, end_time, "
+                 "google_event_id, google_event_link, created_at) "
+                 "VALUES (:id, :user_id, :title, :description, :start_time, :end_time, "
+                 ":google_event_id, :google_event_link, :created_at)"),
+            {"id": mid, "user_id": user["id"], "title": body.title, "description": body.description,
+             "start_time": body.start_time, "end_time": body.end_time,
+             "google_event_id": google_event_id, "google_event_link": google_event_link, "created_at": now},
+        )
+        row = row_to_dict(db.execute(text("SELECT * FROM meetings WHERE id = :id"), {"id": mid}).fetchone())
+    return meeting_public(row)
+
+
+@api.delete("/meetings/{meeting_id}", status_code=204)
+def delete_meeting(meeting_id: str, user: dict = Depends(get_current_user)):
+    with get_db() as db:
+        row = row_to_dict(db.execute(
+            text("SELECT * FROM meetings WHERE id = :id AND user_id = :uid"), {"id": meeting_id, "uid": user["id"]}
+        ).fetchone())
+        if not row:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        if row["google_event_id"]:
+            service = get_calendar_service(user)
+            if service:
+                try:
+                    service.events().delete(calendarId="primary", eventId=row["google_event_id"]).execute()
+                except Exception:
+                    pass  # event may already be gone from Google's side
+        db.execute(text("DELETE FROM meetings WHERE id = :id"), {"id": meeting_id})
     return Response(status_code=204)
 
 

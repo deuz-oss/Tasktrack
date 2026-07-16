@@ -482,6 +482,128 @@ function TeamView({ categories }) {
   );
 }
 
+function MeetingsView() {
+  const [meetings, setMeetings] = useState([]);
+  const [status, setStatus] = useState({ connected: false, google_email: null });
+  const [showForm, setShowForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("09:30");
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const [m, s] = await Promise.all([api("/meetings"), api("/auth/google/status")]);
+      setMeetings(m); setStatus(s);
+    } catch (e) { setError(e.message); }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const connect = async () => {
+    try {
+      const { auth_url } = await api("/auth/google/connect");
+      window.location.href = auth_url;
+    } catch (e) { setError(e.message); }
+  };
+
+  const disconnect = async () => { await api("/auth/google/disconnect", { method: "POST" }); load(); };
+
+  const createMeeting = async (e) => {
+    e.preventDefault();
+    if (!title.trim() || !date) return;
+    try {
+      await api("/meetings", {
+        method: "POST",
+        body: JSON.stringify({
+          title, start_time: `${date}T${startTime}:00`, end_time: `${date}T${endTime}:00`,
+        }),
+      });
+      setTitle(""); setDate(""); setShowForm(false);
+      load();
+    } catch (err) { setError(err.message); }
+  };
+
+  const del = async (id) => { await api(`/meetings/${id}`, { method: "DELETE" }); load(); };
+
+  const inputStyle = { width: "100%", border: `2px solid ${INK}`, padding: "9px 10px", fontFamily: "inherit", boxSizing: "border-box" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16, marginBottom: 20 }}>
+        <div>
+          <div style={{ fontFamily: mono, fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#8a6fd6" }}>SCHEDULE</div>
+          <h1 style={{ fontFamily: display, fontSize: 42, margin: "4px 0 0" }}>MEETINGS</h1>
+        </div>
+        <button onClick={() => setShowForm(true)} style={{ padding: "12px 18px", background: INK, color: "#fff", border: "none", fontFamily: mono, fontWeight: 700, fontSize: 12, letterSpacing: 0.5, cursor: "pointer" }}>+ NEW MEETING</button>
+      </div>
+
+      <div style={{ ...cardStyle, padding: 18, marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>Google Calendar</div>
+          <div style={{ fontFamily: mono, fontSize: 12, color: "#8a8a8a", marginTop: 2 }}>
+            {status.connected ? `Connected as ${status.google_email}` : "Not connected — meetings won't sync automatically"}
+          </div>
+        </div>
+        {status.connected ? (
+          <button onClick={disconnect} style={{ padding: "10px 16px", border: `2px solid ${INK}`, background: "#fff", fontFamily: mono, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>DISCONNECT</button>
+        ) : (
+          <button onClick={connect} style={{ padding: "10px 16px", border: "none", background: INK, color: "#fff", fontFamily: mono, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>CONNECT GOOGLE CALENDAR</button>
+        )}
+      </div>
+
+      {error && <div style={{ color: RED, fontWeight: 600, marginBottom: 12 }}>{error}</div>}
+
+      {showForm && (
+        <form onSubmit={createMeeting} style={{ ...cardStyle, padding: 20, marginBottom: 20 }}>
+          <label style={{ fontFamily: mono, fontSize: 11, fontWeight: 700 }}>TITLE</label>
+          <input autoFocus required value={title} onChange={e => setTitle(e.target.value)} placeholder="Weekly sync" style={{ ...inputStyle, margin: "6px 0 14px" }} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <label style={{ fontFamily: mono, fontSize: 11, fontWeight: 700 }}>DATE</label>
+              <input type="date" required value={date} onChange={e => setDate(e.target.value)} style={{ ...inputStyle, marginTop: 6 }} />
+            </div>
+            <div>
+              <label style={{ fontFamily: mono, fontSize: 11, fontWeight: 700 }}>START</label>
+              <input type="time" required value={startTime} onChange={e => setStartTime(e.target.value)} style={{ ...inputStyle, marginTop: 6 }} />
+            </div>
+            <div>
+              <label style={{ fontFamily: mono, fontSize: 11, fontWeight: 700 }}>END</label>
+              <input type="time" required value={endTime} onChange={e => setEndTime(e.target.value)} style={{ ...inputStyle, marginTop: 6 }} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button type="button" onClick={() => setShowForm(false)} style={{ flex: 1, padding: "12px 0", border: `2px solid ${INK}`, background: "#fff", fontFamily: mono, fontWeight: 700, cursor: "pointer" }}>CANCEL</button>
+            <button type="submit" style={{ flex: 1, padding: "12px 0", border: `2px solid ${INK}`, background: INK, color: "#fff", fontFamily: mono, fontWeight: 700, cursor: "pointer" }}>CREATE MEETING</button>
+          </div>
+        </form>
+      )}
+
+      <div style={cardStyle}>
+        {meetings.length === 0 && <div style={{ padding: 18, color: "#8a8a8a", fontFamily: mono, fontSize: 13 }}>No meetings scheduled yet.</div>}
+        {meetings.map(m => (
+          <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: `2px solid ${INK}`, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{m.title}</div>
+              <div style={{ fontFamily: mono, fontSize: 12, color: "#8a8a8a", marginTop: 4 }}>
+                {m.start_time.replace("T", " ").slice(0, 16)} – {m.end_time.slice(11, 16)}
+              </div>
+            </div>
+            {m.synced ? (
+              <a href={m.google_event_link} target="_blank" rel="noreferrer">
+                <Pill bg={MINT}>synced to google</Pill>
+              </a>
+            ) : (
+              <Pill border={false} bg="#eee">not synced</Pill>
+            )}
+            <button onClick={() => del(m.id)} style={{ width: 32, height: 32, border: `2px solid ${INK}`, background: "#fff", cursor: "pointer", fontWeight: 700 }}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [user, setUser] = useState(undefined);
   const [view, setView] = useState("dashboard");
@@ -514,6 +636,7 @@ function App() {
           <NavButton label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
           <NavButton label="Tasks" active={view === "tasks"} onClick={() => setView("tasks")} />
           <NavButton label="Categories" active={view === "categories"} onClick={() => setView("categories")} />
+          <NavButton label="Meetings" active={view === "meetings"} onClick={() => setView("meetings")} />
           {user.role === "admin" && <NavButton label="Team" active={view === "team"} onClick={() => setView("team")} />}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -529,6 +652,7 @@ function App() {
         {view === "dashboard" && <DashboardView tasks={tasks} categories={categories} userName={user.name} openModal={() => setShowModal(true)} refresh={loadAll} />}
         {view === "tasks" && <TasksView tasks={tasks} categories={categories} openModal={() => setShowModal(true)} refresh={loadAll} />}
         {view === "categories" && <CategoriesView categories={categories} refresh={loadAll} />}
+        {view === "meetings" && <MeetingsView />}
         {view === "team" && user.role === "admin" && <TeamView categories={categories} />}
       </div>
     </div>
